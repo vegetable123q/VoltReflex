@@ -1,0 +1,176 @@
+# Battery Arbitrage Agent - Default Configuration
+# 实验配置文件
+
+# ============================================================
+# 实验基础设置
+# ============================================================
+experiment:
+  name: "battery_arbitrage_reflexion"
+  seed: 42
+  num_runs: 5  # 多次运行取平均
+  num_days: 7
+  save_results: true
+  output_dir: "outputs"
+
+# ============================================================
+# 电池参数 (Tesla Powerwall 2)
+# ============================================================
+battery:
+  capacity_kwh: 13.5
+  max_power_kw: 5.0
+  efficiency: 0.9  # Round-trip efficiency
+  min_soc: 0.1     # 最低SOC保护
+  max_soc: 1.0
+  initial_soc: 0.5
+  # 电池退化参数
+  degradation:
+    enabled: true
+    cycle_cost: 0.001  # 每次充放电循环的成本 ($/cycle)
+    calendar_aging: 0.00001  # 日历老化 (每小时容量损失比例)
+
+# ============================================================
+# 电价数据配置
+# ============================================================
+data:
+  source: "synthetic"  # synthetic, caiso, pjm, custom
+  path: "data/market_data.csv"
+  # 合成数据参数
+  synthetic:
+    days: 14
+    peak_price: 0.50      # $/kWh
+    off_peak_price: 0.10
+    shoulder_price: 0.20
+    price_noise: 0.05     # 价格波动标准差
+    # 价格尖峰事件
+    spike_probability: 0.02  # 每小时发生概率
+    spike_multiplier: 3.0    # 尖峰倍数
+  # 真实数据参数
+  real_data:
+    start_date: "2024-01-01"
+    end_date: "2024-01-14"
+    region: "CAISO"  # CAISO, PJM, ERCOT
+
+# ============================================================
+# Agent 配置
+# ============================================================
+agents:
+  # 规则基线
+  rule:
+    enabled: true
+    charge_threshold: 0.15
+    discharge_threshold: 0.40
+    max_soc_for_charge: 0.90
+    min_soc_for_discharge: 0.15
+
+  # Zero-shot LLM Agent
+  simple_llm:
+    enabled: true
+    model: "gpt-4o-mini"
+    temperature: 0.1
+    max_tokens: 100
+
+  # Reflexion Agent (核心)
+  reflexion:
+    enabled: true
+    model: "gpt-4o-mini"
+    decision_temperature: 0.1
+    reflection_temperature: 0.3
+    # 记忆设置
+    memory:
+      max_days: 5          # 长期记忆保留天数
+      include_stats: true   # 是否包含统计信息
+    # 反思设置
+    reflection:
+      frequency: "daily"    # daily, hourly, weekly
+      include_price_forecast: false
+      
+  # 强化学习基线 (可选)
+  rl_baseline:
+    enabled: false
+    algorithm: "DQN"  # DQN, PPO, A2C
+    learning_rate: 0.001
+    episodes: 1000
+
+# ============================================================
+# 消融实验配置
+# ============================================================
+ablation:
+  enabled: false
+  experiments:
+    - name: "no_reflection"
+      modify:
+        agents.reflexion.reflection.frequency: "never"
+    - name: "hourly_reflection"
+      modify:
+        agents.reflexion.reflection.frequency: "hourly"
+    - name: "short_memory"
+      modify:
+        agents.reflexion.memory.max_days: 1
+    - name: "long_memory"
+      modify:
+        agents.reflexion.memory.max_days: 14
+    - name: "gpt4o_model"
+      modify:
+        agents.reflexion.model: "gpt-4o"
+    - name: "high_temperature"
+      modify:
+        agents.reflexion.decision_temperature: 0.7
+
+# ============================================================
+# 评估指标
+# ============================================================
+metrics:
+  # 财务指标
+  financial:
+    - total_profit
+    - daily_profit
+    - cumulative_profit
+    - sharpe_ratio
+    - max_drawdown
+    - sortino_ratio
+    - profit_factor
+  # 操作指标
+  operational:
+    - charge_count
+    - discharge_count
+    - hold_count
+    - avg_soc
+    - soc_volatility
+    - cycles_count
+  # 效率指标
+  efficiency:
+    - energy_efficiency
+    - price_capture_ratio  # 实际收益/理论最优收益
+    - llm_calls
+    - total_cost
+
+# ============================================================
+# 可视化配置
+# ============================================================
+visualization:
+  enabled: true
+  save_plots: true
+  plot_format: "png"  # png, pdf, svg
+  dpi: 300
+  style: "seaborn-v0_8-whitegrid"
+  plots:
+    - cumulative_profit
+    - daily_profit_comparison
+    - action_distribution
+    - soc_profile
+    - price_vs_action_heatmap
+    - strategy_evolution
+    - statistical_significance
+
+# ============================================================
+# 日志配置
+# ============================================================
+logging:
+  level: "INFO"
+  save_logs: true
+  # Weights & Biases 集成
+  wandb:
+    enabled: false
+    project: "battery-arbitrage"
+    entity: null  # 你的 W&B 用户名
+    tags: ["reflexion", "llm-agent", "energy"]
