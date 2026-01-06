@@ -166,8 +166,8 @@ def main():
     parser.add_argument('--agents', nargs='+', default=['rule', 'reflexion'],
                         choices=['rule', 'simple_llm', 'reflexion'],
                         help='Agents to run')
-    parser.add_argument('--model', type=str, default='gpt-4o-mini',
-                        help='LLM model to use')
+    parser.add_argument('--model', type=str, default=os.getenv('OPENAI_MODEL', 'gpt-4o-mini'),
+                        help='LLM model to use (default: from OPENAI_MODEL env var)')
     parser.add_argument('--no-plot', action='store_true', help='Disable plotting')
     parser.add_argument('--verbose', action='store_true', default=True,
                         help='Print detailed output')

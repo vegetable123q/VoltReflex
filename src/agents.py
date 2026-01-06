@@ -2,12 +2,16 @@
 Agents Module
 定义三种 Agent: RuleAgent, SimpleLLMAgent, ReflexionAgent
 """
+import os
 import re
 from abc import ABC, abstractmethod
 from typing import Dict, List, Optional, TypedDict
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.graph import StateGraph, END
+
+# 从环境变量获取默认模型
+DEFAULT_MODEL = os.getenv('OPENAI_MODEL', 'gpt-4o-mini')
 
 from .prompts import (
     DECISION_SYSTEM_PROMPT,
@@ -110,8 +114,9 @@ class SimpleLLMAgent(BaseAgent):
     每次决策独立调用 LLM
     """
     
-    def __init__(self, model_name: str = "gpt-4o-mini", temperature: float = 0.1):
+    def __init__(self, model_name: str = None, temperature: float = 0.1):
         super().__init__(name="SimpleLLMAgent")
+        model_name = model_name or DEFAULT_MODEL
         self.llm = ChatOpenAI(
             model=model_name,
             temperature=temperature
@@ -161,11 +166,12 @@ class ReflexionAgent(BaseAgent):
     
     def __init__(
         self,
-        model_name: str = "gpt-4o-mini",
+        model_name: str = None,
         temperature: float = 0.1,
         reflection_temperature: float = 0.3
     ):
         super().__init__(name="ReflexionAgent")
+        model_name = model_name or DEFAULT_MODEL
         
         # 决策用 LLM（低温度，更确定性）
         self.decision_llm = ChatOpenAI(

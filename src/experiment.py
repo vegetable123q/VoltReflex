@@ -13,7 +13,7 @@ import pandas as pd
 from dataclasses import dataclass, field, asdict
 
 from src.env import BatteryEnv
-from src.agents import RuleAgent, SimpleLLMAgent, ReflexionAgent, BaseAgent
+from src.agents import RuleAgent, SimpleLLMAgent, ReflexionAgent, BaseAgent, DEFAULT_MODEL
 from src.metrics import MetricsCalculator, calculate_theoretical_optimal
 from src.utils import load_market_data
 
@@ -87,7 +87,7 @@ class ExperimentRunner:
             },
             'agents': {
                 'rule': {'enabled': True},
-                'reflexion': {'enabled': True, 'model': 'gpt-4o-mini'}
+                'reflexion': {'enabled': True, 'model': DEFAULT_MODEL}
             }
         }
     
@@ -97,12 +97,12 @@ class ExperimentRunner:
             return RuleAgent()
         elif agent_type == 'simple_llm':
             return SimpleLLMAgent(
-                model_name=config.get('model', 'gpt-4o-mini'),
+                model_name=config.get('model', DEFAULT_MODEL),
                 temperature=config.get('temperature', 0.1)
             )
         elif agent_type == 'reflexion':
             return ReflexionAgent(
-                model_name=config.get('model', 'gpt-4o-mini'),
+                model_name=config.get('model', DEFAULT_MODEL),
                 temperature=config.get('decision_temperature', 0.1),
                 reflection_temperature=config.get('reflection_temperature', 0.3)
             )
