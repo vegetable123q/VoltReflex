@@ -222,7 +222,7 @@ if __name__ == "__main__":
     # 简单测试
     import os
     
-    data_path = os.path.join(os.path.dirname(__file__), '..', 'data', 'market_data.csv')
+    data_path = os.path.join(os.path.dirname(__file__), '..', 'data', 'caiso_enhanced_data.csv')
     df = pd.read_csv(data_path)
     
     env = BatteryEnv(df)

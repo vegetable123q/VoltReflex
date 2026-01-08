@@ -24,6 +24,9 @@ from src.utils import (
     create_results_dataframe,
 )
 
+# 输出目录
+OUTPUT_DIR = "outputs"
+
 # 加载环境变量
 load_dotenv()
 
@@ -213,10 +216,14 @@ def main():
     # 打印摘要
     print_experiment_summary(results)
     
+    # 确保输出目录存在
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
+    
     # 保存结果到 CSV
     results_df = create_results_dataframe(results)
-    results_df.to_csv('experiment_results.csv', index=False)
-    print("💾 Results saved to experiment_results.csv")
+    results_csv_path = os.path.join(OUTPUT_DIR, 'experiment_results.csv')
+    results_df.to_csv(results_csv_path, index=False)
+    print(f"💾 Results saved to {results_csv_path}")
     
     # 绘图
     if not args.no_plot:
@@ -227,7 +234,7 @@ def main():
         plot_cumulative_profits(
             hourly_results,
             title=f"Cumulative Profit Comparison ({args.days} Days)",
-            save_path="cumulative_profits.png"
+            save_path=os.path.join(OUTPUT_DIR, "cumulative_profits.png")
         )
         
         # 每日利润对比
@@ -235,7 +242,7 @@ def main():
         plot_daily_profits(
             daily_results,
             title=f"Daily Profit Comparison",
-            save_path="daily_profits.png"
+            save_path=os.path.join(OUTPUT_DIR, "daily_profits.png")
         )
         
         # 动作分布
@@ -250,7 +257,7 @@ def main():
         plot_action_distribution(
             action_results,
             title="Action Distribution by Agent",
-            save_path="action_distribution.png"
+            save_path=os.path.join(OUTPUT_DIR, "action_distribution.png")
         )
         
         # SOC 曲线（只画第一个 Agent）
@@ -259,7 +266,7 @@ def main():
             results[first_agent]['history'],
             df,
             title=f"Battery SOC Profile ({first_agent})",
-            save_path=f"soc_profile_{first_agent}.png"
+            save_path=os.path.join(OUTPUT_DIR, f"soc_profile_{first_agent}.png")
         )
     
     # 打印 ReflexionAgent 的最终记忆

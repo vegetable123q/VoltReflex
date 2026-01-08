@@ -14,3 +14,11 @@ wheels/
 .DS_Store
 
 outputs/
+
+# 原始数据文件 (只保留增强后的最终数据)
+data/CAISO_LMP_*.csv
+data/CAISO_load_*.csv
+data/caiso_market_data.csv
+data/caiso_full_data.csv
+data/market_data.csv
+data/cache/

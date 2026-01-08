@@ -27,9 +27,9 @@ def load_market_data(file_path: Optional[str] = None) -> pd.DataFrame:
         包含 timestamp, price, load 的 DataFrame
     """
     if file_path is None:
-        # 默认路径
+        # 默认路径 - 使用增强后的 CAISO 数据
         current_dir = os.path.dirname(os.path.abspath(__file__))
-        file_path = os.path.join(current_dir, '..', 'data', 'market_data.csv')
+        file_path = os.path.join(current_dir, '..', 'data', 'caiso_enhanced_data.csv')
     
     df = pd.read_csv(file_path)
     df['timestamp'] = pd.to_datetime(df['timestamp'])

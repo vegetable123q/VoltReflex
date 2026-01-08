@@ -8,7 +8,7 @@ experiment:
   name: "battery_arbitrage_reflexion"
   seed: 42
   num_runs: 5  # 多次运行取平均
-  num_days: 7
+  num_days: 14  # 使用全部14天数据
   save_results: true
   output_dir: "outputs"
 
@@ -32,8 +32,8 @@ battery:
 # 电价数据配置
 # ============================================================
 data:
-  source: "synthetic"  # synthetic, caiso, pjm, custom
-  path: "data/market_data.csv"
+  source: "custom"  # synthetic, caiso, pjm, custom
+  path: "data/caiso_enhanced_data.csv"
   # 合成数据参数
   synthetic:
     days: 14
@@ -57,8 +57,8 @@ agents:
   # 规则基线
   rule:
     enabled: true
-    charge_threshold: 0.15
-    discharge_threshold: 0.40
+    charge_threshold: 0.03     # 低于此价格充电 (适应增强数据)
+    discharge_threshold: 0.08  # 高于此价格放电 (适应增强数据)
     max_soc_for_charge: 0.90
     min_soc_for_discharge: 0.15
 
@@ -97,7 +97,7 @@ agents:
 # 消融实验配置
 # ============================================================
 ablation:
-  enabled: false
+  enabled: true
   experiments:
     - name: "no_reflection"
       modify:
@@ -111,9 +111,9 @@ ablation:
     - name: "long_memory"
       modify:
         agents.reflexion.memory.max_days: 14
-    - name: "gpt4.1mini_model"
+    - name: "QwQ-32B_model"
       modify:
-        agents.reflexion.model: "gpt-4.1-mini"
+        agents.reflexion.model: "QwQ-32B"
     - name: "high_temperature"
       modify:
         agents.reflexion.decision_temperature: 0.7

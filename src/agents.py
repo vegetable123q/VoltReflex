@@ -11,8 +11,8 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.graph import StateGraph, END
 
 # 从环境变量获取默认模型和 API 配置
-DEFAULT_MODEL = os.getenv('OPENAI_MODEL', 'deepseek-chat')
-DEFAULT_BASE_URL = os.getenv('OPENAI_API_BASE', 'https://api.deepseek.com/v1')
+DEFAULT_MODEL = os.getenv('OPENAI_MODEL', 'Kimi-K2')
+DEFAULT_BASE_URL = os.getenv('OPENAI_API_BASE', 'https://llmapi.paratera.com/v1')
 
 from .prompts import (
     DECISION_SYSTEM_PROMPT,
@@ -85,15 +85,15 @@ class RuleAgent(BaseAgent):
     基于规则的基线 Agent
     
     规则:
-    - IF price < 0.15 AND soc < 90% THEN CHARGE
-    - IF price > 0.40 AND soc > 10% THEN DISCHARGE
+    - IF price < charge_threshold AND soc < 90% THEN CHARGE
+    - IF price > discharge_threshold AND soc > 10% THEN DISCHARGE
     - ELSE HOLD
     """
     
-    def __init__(self):
+    def __init__(self, charge_threshold: float = 0.025, discharge_threshold: float = 0.035):
         super().__init__(name="RuleAgent")
-        self.charge_threshold = 0.15  # 低于此价格充电
-        self.discharge_threshold = 0.40  # 高于此价格放电
+        self.charge_threshold = charge_threshold  # 低于此价格充电
+        self.discharge_threshold = discharge_threshold  # 高于此价格放电
         self.max_soc = 90  # 最大充电 SOC
         self.min_soc = 10  # 最小放电 SOC
     
