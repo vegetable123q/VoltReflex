@@ -411,27 +411,260 @@ class DQNAgent:
 
 class MPCBaseline:
     """
-    Model Predictive Control 基线
-    假设未来价格完美已知的理想情况
+    Model Predictive Control 基线 - 理论最优上界
+    
+    使用线性规划求解完美预见下的最优套利策略。
+    假设未来价格完全已知，计算全局最优的充放电计划。
+    
+    这是一个理论上界，实际策略不可能达到（因为无法预知未来价格）。
     """
     
-    def __init__(self, horizon: int = 24):
+    def __init__(
+        self, 
+        horizon: int = 24,
+        capacity_kwh: float = 13.5,
+        max_charge_kw: float = 5.0,
+        max_discharge_kw: float = 5.0,
+        efficiency: float = 0.9,
+        min_soc: float = 0.10,
+        max_soc: float = 0.95,
+    ):
         self.horizon = horizon
+        self.capacity_kwh = capacity_kwh
+        self.max_charge_kw = max_charge_kw
+        self.max_discharge_kw = max_discharge_kw
+        self.efficiency = efficiency  # round-trip efficiency
+        self.eff_charge = np.sqrt(efficiency)
+        self.eff_discharge = np.sqrt(efficiency)
+        self.min_soc = min_soc
+        self.max_soc = max_soc
+        
         self.future_prices = None
         self.current_index = 0
+        self.optimal_actions = None  # 预计算的最优动作序列
     
-    def set_price_forecast(self, prices: List[float]):
-        """设置价格预测（或真实未来价格）"""
+    def set_price_forecast(self, prices: List[float], initial_soc: float = 0.5):
+        """
+        设置价格预测并求解全局最优策略
+        
+        Args:
+            prices: 完整的价格序列
+            initial_soc: 初始 SOC (0-1)
+        """
         self.future_prices = prices
         self.current_index = 0
+        
+        # 使用线性规划求解最优动作序列
+        self.optimal_actions = self._solve_optimal_schedule(prices, initial_soc)
+    
+    def _solve_optimal_schedule(
+        self, 
+        prices: List[float], 
+        initial_soc: float
+    ) -> List[str]:
+        """
+        使用线性规划求解最优充放电计划
+        
+        决策变量:
+        - charge[t]: 第t时刻充电功率 (kW), >= 0
+        - discharge[t]: 第t时刻放电功率 (kW), >= 0
+        - soc[t]: 第t时刻的 SOC
+        
+        目标: 最大化 sum_t (discharge[t] * price[t] * eff_discharge - charge[t] * price[t] / eff_charge)
+        
+        约束:
+        - soc[t+1] = soc[t] + charge[t] * eff_charge / capacity - discharge[t] / (capacity * eff_discharge)
+        - min_soc <= soc[t] <= max_soc
+        - 0 <= charge[t] <= max_charge
+        - 0 <= discharge[t] <= max_discharge
+        """
+        try:
+            from scipy.optimize import linprog
+        except ImportError:
+            print("Warning: scipy not available, falling back to heuristic MPC")
+            return self._heuristic_schedule(prices, initial_soc)
+        
+        T = len(prices)
+        if T == 0:
+            return []
+        
+        # 决策变量: [charge_0, ..., charge_{T-1}, discharge_0, ..., discharge_{T-1}]
+        # 共 2T 个变量
+        
+        # 目标函数系数 (最大化利润 => 最小化负利润)
+        # profit = sum_t (discharge[t] * price[t] * eff_discharge - charge[t] * price[t] / eff_charge)
+        c = []
+        for t in range(T):
+            # charge[t] 的系数: +price[t] / eff_charge (成本，要最小化)
+            c.append(prices[t] / self.eff_charge)
+        for t in range(T):
+            # discharge[t] 的系数: -price[t] * eff_discharge (收益的负值)
+            c.append(-prices[t] * self.eff_discharge)
+        
+        c = np.array(c)
+        
+        # SOC 动态约束: soc[t+1] = soc[t] + charge[t] * eff / cap - discharge[t] / (cap * eff)
+        # 重写为: soc[t+1] - soc[t] - charge[t] * eff / cap + discharge[t] / (cap * eff) = 0
+        # 
+        # 我们用 soc[t] = soc[0] + sum_{i=0}^{t-1} (charge[i] * eff / cap - discharge[i] / (cap * eff))
+        # 所以 soc[t] 是 charge 和 discharge 的线性函数
+        
+        # SOC 边界约束 (作为不等式约束)
+        # min_soc <= soc[t] <= max_soc for all t
+        # 
+        # soc[t] = soc_init + sum_{i<t} delta_i
+        # where delta_i = charge[i] * eff_charge / cap - discharge[i] / (cap * eff_discharge)
+        
+        cap = self.capacity_kwh
+        eff_c = self.eff_charge
+        eff_d = self.eff_discharge
+        
+        A_ub = []
+        b_ub = []
+        
+        # 对于每个时刻 t = 1, ..., T, 构建 SOC 约束
+        # soc[t] = soc_init + sum_{i=0}^{t-1} (charge[i] * eff_c / cap - discharge[i] / (cap * eff_d))
+        # 
+        # 上界约束: soc[t] <= max_soc
+        # => sum_{i<t} (charge[i] * eff_c / cap) - sum_{i<t} (discharge[i] / (cap * eff_d)) <= max_soc - soc_init
+        #
+        # 下界约束: soc[t] >= min_soc
+        # => -sum_{i<t} (charge[i] * eff_c / cap) + sum_{i<t} (discharge[i] / (cap * eff_d)) <= soc_init - min_soc
+        
+        for t in range(1, T + 1):
+            # 上界约束: sum_{i<t} charge[i] * (eff_c/cap) - sum_{i<t} discharge[i] * (1/(cap*eff_d)) <= max_soc - soc_init
+            row_upper = np.zeros(2 * T)
+            for i in range(t):
+                row_upper[i] = eff_c / cap  # charge[i]
+                row_upper[T + i] = -1.0 / (cap * eff_d)  # discharge[i]
+            A_ub.append(row_upper)
+            b_ub.append(self.max_soc - initial_soc)
+            
+            # 下界约束: -sum_{i<t} charge[i] * (eff_c/cap) + sum_{i<t} discharge[i] * (1/(cap*eff_d)) <= soc_init - min_soc
+            row_lower = np.zeros(2 * T)
+            for i in range(t):
+                row_lower[i] = -eff_c / cap  # charge[i]
+                row_lower[T + i] = 1.0 / (cap * eff_d)  # discharge[i]
+            A_ub.append(row_lower)
+            b_ub.append(initial_soc - self.min_soc)
+        
+        A_ub = np.array(A_ub)
+        b_ub = np.array(b_ub)
+        
+        # 变量边界
+        bounds = []
+        for _ in range(T):
+            bounds.append((0, self.max_charge_kw))  # charge bounds
+        for _ in range(T):
+            bounds.append((0, self.max_discharge_kw))  # discharge bounds
+        
+        # 求解线性规划
+        try:
+            result = linprog(c, A_ub=A_ub, b_ub=b_ub, bounds=bounds, method='highs')
+            
+            if result.success:
+                charge = result.x[:T]
+                discharge = result.x[T:]
+                
+                # 转换为离散动作
+                actions = []
+                for t in range(T):
+                    if charge[t] > 0.5:  # 充电阈值
+                        actions.append('CHARGE')
+                    elif discharge[t] > 0.5:  # 放电阈值
+                        actions.append('DISCHARGE')
+                    else:
+                        actions.append('HOLD')
+                
+                return actions
+            else:
+                print(f"LP optimization failed: {result.message}, using heuristic")
+                return self._heuristic_schedule(prices, initial_soc)
+                
+        except Exception as e:
+            print(f"LP solver error: {e}, using heuristic")
+            return self._heuristic_schedule(prices, initial_soc)
+    
+    def _heuristic_schedule(
+        self, 
+        prices: List[float], 
+        initial_soc: float
+    ) -> List[str]:
+        """
+        备用启发式方法：识别价格谷值和峰值进行套利
+        """
+        T = len(prices)
+        if T == 0:
+            return []
+        
+        actions = []
+        soc = initial_soc
+        
+        # 计算每日的价格统计
+        window_size = min(24, T)
+        
+        for t in range(T):
+            price = prices[t]
+            
+            # 计算当前窗口的价格范围
+            window_start = max(0, t - window_size // 2)
+            window_end = min(T, t + window_size // 2)
+            window_prices = prices[window_start:window_end]
+            
+            if len(window_prices) > 0:
+                p_min = min(window_prices)
+                p_max = max(window_prices)
+                p_range = p_max - p_min
+                
+                # 归一化当前价格位置
+                if p_range > 1e-6:
+                    price_percentile = (price - p_min) / p_range
+                else:
+                    price_percentile = 0.5
+                
+                # 基于价格百分位和SOC状态决策
+                if price_percentile < 0.25 and soc < self.max_soc - 0.05:
+                    # 价格在低25%，充电
+                    actions.append('CHARGE')
+                    soc = min(self.max_soc, soc + self.max_charge_kw * self.eff_charge / self.capacity_kwh)
+                elif price_percentile > 0.75 and soc > self.min_soc + 0.05:
+                    # 价格在高25%，放电
+                    actions.append('DISCHARGE')
+                    soc = max(self.min_soc, soc - self.max_discharge_kw / (self.capacity_kwh * self.eff_discharge))
+                else:
+                    actions.append('HOLD')
+            else:
+                actions.append('HOLD')
+        
+        return actions
     
     def decide(self, obs: Dict) -> str:
-        """基于未来价格信息做出最优决策"""
+        """基于预计算的最优计划返回动作"""
+        if self.optimal_actions is None or self.current_index >= len(self.optimal_actions):
+            # 如果没有预计算，使用简单启发式
+            return self._simple_decide(obs)
+        
+        action = self.optimal_actions[self.current_index]
+        self.current_index += 1
+        
+        # 安全检查 - 确保不违反 SOC 约束
+        soc = obs.get('soc', 50) / 100.0 if obs.get('soc', 50) > 1 else obs.get('soc', 0.5)
+        if action == 'CHARGE' and soc >= self.max_soc - 0.01:
+            return 'HOLD'
+        if action == 'DISCHARGE' and soc <= self.min_soc + 0.01:
+            return 'HOLD'
+        
+        return action
+    
+    def _simple_decide(self, obs: Dict) -> str:
+        """简单的启发式决策（备用）"""
         if self.future_prices is None:
             return 'HOLD'
         
         current_price = obs['price']
-        soc = obs['soc']
+        soc = obs.get('soc', 50)
+        if soc > 1:  # 如果是百分比形式
+            soc = soc / 100.0
         
         # 获取未来价格窗口
         future_end = min(self.current_index + self.horizon, len(self.future_prices))
@@ -444,13 +677,11 @@ class MPCBaseline:
         max_future = max(future_window)
         min_future = min(future_window)
         
-        # MPC 策略
-        # 如果当前价格是未来窗口最低，充电
-        # 如果当前价格是未来窗口最高，放电
-        
-        if current_price <= min_future * 1.1 and soc < 90:
+        # 如果当前价格是未来窗口最低的10%，充电
+        # 如果当前价格是未来窗口最高的10%，放电
+        if current_price <= min_future * 1.05 and soc < self.max_soc - 0.05:
             action = 'CHARGE'
-        elif current_price >= max_future * 0.9 and soc > 20:
+        elif current_price >= max_future * 0.95 and soc > self.min_soc + 0.05:
             action = 'DISCHARGE'
         else:
             action = 'HOLD'
@@ -461,6 +692,7 @@ class MPCBaseline:
     def reset(self):
         """重置"""
         self.current_index = 0
+        self.optimal_actions = None
 
 
 def train_rl_agent(agent, env_class, data, n_episodes: int = 100, 

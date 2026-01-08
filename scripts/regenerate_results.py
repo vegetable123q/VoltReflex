@@ -169,8 +169,18 @@ def _run_mpc(
     env = BatteryEnv(df.copy(), config=env_cfg)
     obs, _ = env.reset(seed=seed, options={"initial_soc": initial_soc})
 
-    mpc = MPCBaseline(horizon=horizon)
-    mpc.set_price_forecast(df[env_cfg.base_price_col].tolist())
+    # 创建 MPC 并传入电池参数
+    mpc = MPCBaseline(
+        horizon=horizon,
+        capacity_kwh=env_cfg.capacity_kwh,
+        max_charge_kw=env_cfg.max_charge_kw,
+        max_discharge_kw=env_cfg.max_discharge_kw,
+        efficiency=env_cfg.roundtrip_efficiency,
+        min_soc=env_cfg.min_soc,
+        max_soc=env_cfg.max_soc,
+    )
+    # 使用线性规划预计算全局最优策略
+    mpc.set_price_forecast(df[env_cfg.base_price_col].tolist(), initial_soc=initial_soc)
 
     hourly: List[float] = []
     history: List[Dict] = []
