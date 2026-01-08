@@ -203,60 +203,93 @@ python main.py --model gpt-4o
 
 ## 📈 实验结果
 
-### 主实验 (14天模拟)
+### 实验配置
 
-| 策略 | 总收益 | Sharpe | Max DD | Win Rate |
-|------|--------|--------|--------|----------|
-| Rule-based | $X.XX | X.XX | $X.XX | XX% |
-| Zero-shot | $X.XX | X.XX | $X.XX | XX% |
-| Q-Learning | $X.XX | X.XX | $X.XX | XX% |
-| DQN | $X.XX | X.XX | $X.XX | XX% |
-| **Reflexion** | **$X.XX** | **X.XX** | **$X.XX** | **XX%** |
-| MPC (上界) | $X.XX | X.XX | $X.XX | XX% |
+| 参数 | 值 |
+|------|-----|
+| **实验周期** | 14 天 (336 小时) |
+| **电池配置** | Tesla Powerwall 2 (13.5 kWh, 5.0 kW) |
+| **数据来源** | CAISO 增强电价数据 |
+| **价格范围** | $-0.02 ~ $0.98/kWh |
+| **LLM 模型** | Kimi-K2 |
 
-### 跨市场验证
+### 主实验结果 (14天模拟)
 
-| 市场 | Rule | Reflexion | 提升 |
-|------|------|-----------|------|
-| CAISO | $X.XX | $X.XX | +XX% |
-| PJM | $X.XX | $X.XX | +XX% |
-| ERCOT | $X.XX | $X.XX | +XX% |
+| 排名 | 方法 | 总利润($) | 充电次数 | 放电次数 | 持有次数 | LLM调用 | 相对MPC |
+|:----:|------|--------:|--------:|--------:|--------:|--------:|--------:|
+| 🥇 | **Q-Learning** | **35.56** | 58 | 59 | 219 | 0 | 183.7% |
+| 🥈 | **Rule-Based** | **23.29** | 61 | 63 | 212 | 0 | 120.3% |
+| 🥉 | **Reflexion** | **19.75** | 62 | 61 | 213 | 350 | 102.1% |
+| 4 | MPC (Upper Bound) | 19.36 | 23 | 22 | 291 | 0 | 100.0% |
+| 5 | Simple LLM | 5.16 | 6 | 2 | 328 | 336 | 26.6% |
+| 6 | DQN | -0.26 | 2 | 0 | 334 | 0 | -1.4% |
 
-## 🔬 消融实验
+### 📊 结果对比图
 
-### 记忆窗口大小
-| 窗口 (天) | 收益 | Sharpe |
-|-----------|------|--------|
-| 1 | $X.XX | X.XX |
-| 3 | $X.XX | X.XX |
-| 7 | $X.XX | X.XX |
+![Experiment Results](outputs/full_comparison_chart.png)
 
-### 反思频率
-| 频率 | 收益 | LLM调用次数 |
-|------|------|-------------|
-| 每小时 | $X.XX | XXX |
-| 每日 | $X.XX | XX |
-| 每周 | $X.XX | X |
+### 🔑 关键发现
+
+#### 1. Q-Learning 表现最佳 ($35.56)
+- 通过 100 轮训练学习到最优交易策略
+- 超越了 MPC 理论上界 (183.7%)
+- 原因：MPC 仅考虑 24 小时窗口，而 Q-Learning 学习了长期价格模式
+
+#### 2. Rule-Based 基线稳健可靠 ($23.29)
+- 简单阈值规则，无需任何训练
+- 实际部署的首选方案
+- 充放电次数均衡 (61 vs 63)
+
+#### 3. Reflexion 显著优于 Zero-shot LLM
+- **利润提升: +283%** ($5.16 → $19.75)
+- 交易活跃度大幅提升:
+  - 充电: 6 → 62 (+933%)
+  - 放电: 2 → 61 (+2950%)
+- 验证了反思机制的有效性
+
+#### 4. Reflexion 学到的策略要点
+通过每日反思，Reflexion Agent 总结出以下交易规则：
+1. **保持低 SOC** (≤10%) 等待低价时机
+2. **严格充电阈值**: 只在价格 < $0.03 时充电
+3. **放电触发价格**: 当价格 ≥ $0.11 时开始放电
+4. **避免高价充电**: 即使电量低也不在高价时段补电
+
+#### 5. DQN 需要更多训练
+- 100 轮训练不足以收敛
+- 建议增加到 1000+ 轮
+- 或考虑使用预训练/迁移学习
+
+### LLM vs Non-LLM 方法对比
+
+| 指标 | LLM 方法 | Non-LLM 方法 |
+|------|---------|-------------|
+| 平均利润 | $12.45 | $19.61 |
+| 最佳利润 | $19.75 (Reflexion) | $35.56 (Q-Learning) |
+| 需要训练 | ❌ | ✅ (RL) / ❌ (Rule) |
+| 可解释性 | ✅ 高 | ⚠️ 中等 |
+| API 成本 | ✅ 有 | ❌ 无 |
+
+### 结论
+
+1. **传统 RL 方法 (Q-Learning)** 在充分训练后可超越 LLM 方法
+2. **反思机制 (Reflexion)** 显著提升 LLM Agent 的决策能力 (+283%)
+3. **简单规则基线** 仍是实际部署的可靠选择
+4. **LLM Agent 的优势** 在于无需训练、可解释性强、易于调试
 
 ## 📁 输出文件
 
 运行后会生成：
 
 ### 数据文件
-- `experiment_results.csv` - 实验结果数据
-- `all_results_summary.json` - 完整结果汇总
+- `outputs/experiment_results.csv` - 单次实验结果
+- `outputs/full_experiment_results_14days.csv` - 完整实验结果汇总
 
-### 图表 (PNG/PDF/SVG)
-- `fig1_cumulative_profits.pdf` - 累积收益曲线 (带置信区间)
-- `fig2_daily_boxplot.pdf` - 每日收益箱线图
-- `fig3_rl_training.pdf` - RL 训练曲线
-- `fig4_cross_market.pdf` - 跨市场对比
-- `fig5_ablation.pdf` - 消融实验热力图
-
-### LaTeX 表格
-- `table1_main_results.tex` - 主实验结果
-- `table2_rl_comparison.tex` - RL 基线对比
-- `table3_cross_market.tex` - 跨市场结果
+### 图表 (PNG)
+- `outputs/full_comparison_chart.png` - 综合对比图 (利润、操作分布、MPC对比)
+- `outputs/cumulative_profits.png` - 累积收益曲线
+- `outputs/daily_profits.png` - 每日收益对比
+- `outputs/action_distribution.png` - 操作分布图
+- `outputs/soc_profile_*.png` - 各 Agent 的 SOC 变化曲线
 
 ## 🔧 技术栈
 
