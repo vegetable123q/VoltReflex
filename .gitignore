@@ -19,6 +19,8 @@ outputs/*
 !outputs/cumulative_profits.png
 !outputs/daily_profits.png
 !outputs/action_distribution.png
+!outputs/meta_agent_analysis.png
+!outputs/strategy_evolution.png
 !outputs/full_experiment_results_14days.csv
 !outputs/results_metadata.yaml
 

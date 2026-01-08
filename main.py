@@ -13,7 +13,7 @@ from typing import Dict, List
 from dotenv import load_dotenv
 
 from src.env import BatteryEnv
-from src.agents import RuleAgent, SimpleLLMAgent, ReflexionAgent, BaseAgent
+from src.agents import RuleAgent, SimpleLLMAgent, CoTAgent, MetaReflexionAgent, BaseAgent
 from src.utils import (
     load_market_data,
     plot_cumulative_profits,
@@ -167,8 +167,8 @@ def main():
     """主函数"""
     parser = argparse.ArgumentParser(description='Battery Arbitrage Agent Experiment')
     parser.add_argument('--days', type=int, default=7, help='Number of days to simulate')
-    parser.add_argument('--agents', nargs='+', default=['rule', 'reflexion'],
-                        choices=['rule', 'simple_llm', 'reflexion'],
+    parser.add_argument('--agents', nargs='+', default=['rule', 'cot'],
+                        choices=['rule', 'simple_llm', 'cot', 'meta'],
                         help='Agents to run')
     parser.add_argument('--model', type=str, default=os.getenv('OPENAI_MODEL', 'gpt-4o-mini'),
                         help='LLM model to use (default: from OPENAI_MODEL env var)')
@@ -179,7 +179,7 @@ def main():
     args = parser.parse_args()
     
     # 检查 API Key
-    if 'simple_llm' in args.agents or 'reflexion' in args.agents:
+    if 'simple_llm' in args.agents or 'cot' in args.agents or 'meta' in args.agents:
         if not os.getenv('OPENAI_API_KEY'):
             print("⚠️  Warning: OPENAI_API_KEY not found in environment.")
             print("   Please set it in .env file or export it.")
@@ -208,8 +208,11 @@ def main():
     if 'simple_llm' in args.agents:
         agents.append(SimpleLLMAgent(model_name=args.model))
     
-    if 'reflexion' in args.agents:
-        agents.append(ReflexionAgent(model_name=args.model))
+    if 'cot' in args.agents:
+        agents.append(CoTAgent(model_name=args.model))
+    
+    if 'meta' in args.agents:
+        agents.append(MetaReflexionAgent(model_name=args.model))
     
     # 运行实验
     results = run_experiment(agents, df, num_days=args.days, verbose=args.verbose)

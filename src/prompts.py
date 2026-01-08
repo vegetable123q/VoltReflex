@@ -187,3 +187,168 @@ def format_simple_prompt(hour: int, price: float, soc: float) -> str:
         price=price,
         soc=soc
     )
+
+
+# ============================================================
+# Meta-Agent Code Generation Prompts (AGA 架构)
+# ============================================================
+
+META_CODER_SYSTEM_PROMPT = """You are an expert Python programmer and quantitative trading strategist.
+Your task is to write Python code that implements a battery trading strategy.
+
+## API Documentation
+
+### Input: observation (Dict)
+The `decide` method receives an observation dictionary with:
+- `observation["price"]`: float - Current electricity price in $/kWh (typical range: $0.01 - $0.50)
+- `observation["soc"]`: float - Current battery state of charge in % (0-100)
+- `observation["hour"]`: int - Current hour of day (0-23)
+
+### Output: Action (str)
+The `decide` method must return one of:
+- "CHARGE" - Buy electricity to charge battery
+- "DISCHARGE" - Sell electricity from battery  
+- "HOLD" - Do nothing
+
+### Battery Physics
+- Capacity: 13.5 kWh
+- Max charge/discharge power: 5 kW per hour
+- Efficiency: 90% round-trip (~95% one-way)
+- Safe SOC range: 10% - 90%
+
+## Code Requirements
+1. Define a class named `GeneratedAgent` that inherits from `GeneratedStrategyBase`
+2. Implement the `decide(self, observation: Dict) -> str` method
+3. Return exactly one of: "CHARGE", "DISCHARGE", or "HOLD"
+4. You may use any standard Python logic (if/else, loops, math operations)
+5. You may add instance variables in `__init__` to track state
+
+## Strategy Tips
+- Charge when price is LOW (below average) and SOC < 90%
+- Discharge when price is HIGH (above average) and SOC > 10%
+- Consider time-of-day patterns (off-peak at night, peak in evening)
+- Avoid illegal actions: no charging when SOC > 90%, no discharging when SOC < 10%
+"""
+
+META_CODER_INITIAL_PROMPT = """Write an initial trading strategy for battery arbitrage.
+
+Here is a simple baseline strategy for reference:
+
+```python
+class GeneratedAgent(GeneratedStrategyBase):
+    def __init__(self):
+        super().__init__()
+        self.name = "GeneratedAgent"
+        self.charge_threshold = 0.025
+        self.discharge_threshold = 0.035
+        self.max_soc = 90
+        self.min_soc = 10
+    
+    def decide(self, observation: Dict) -> str:
+        price = observation["price"]
+        soc = observation["soc"]
+        
+        if price < self.charge_threshold and soc < self.max_soc:
+            return "CHARGE"
+        elif price > self.discharge_threshold and soc > self.min_soc:
+            return "DISCHARGE"
+        else:
+            return "HOLD"
+```
+
+Your task: Create an improved strategy. You can:
+- Adjust the thresholds
+- Add time-of-day logic (use `observation["hour"]`)
+- Add more sophisticated conditions
+
+Output ONLY the Python code wrapped in ```python ... ``` markers.
+"""
+
+META_CODER_FEEDBACK_PROMPT = """Analyze the performance and improve the strategy.
+
+## Previous Strategy Code:
+```python
+{previous_code}
+```
+
+## Performance Results:
+- Total Profit: ${total_profit:.4f}
+- Days Tested: {num_days}
+- Price Range: ${price_min:.4f} - ${price_max:.4f} (Mean: ${price_mean:.4f})
+
+## Action Statistics:
+- Charge actions: {charge_count} (avg price when charging: ${avg_charge_price:.4f})
+- Discharge actions: {discharge_count} (avg price when discharging: ${avg_discharge_price:.4f})
+- Hold actions: {hold_count}
+
+## Detailed Analysis:
+{analysis}
+
+## Error Log (if any):
+{error_log}
+
+## Your Task:
+Based on the above performance data, improve the strategy to maximize profit.
+
+Key observations to consider:
+1. If avg_charge_price > avg_discharge_price, the strategy is buying high and selling low - REVERSE IT!
+2. If charge_count is very low, lower the charge_threshold
+3. If discharge_count is very low, lower the discharge_threshold
+4. If there are many HOLD actions during price extremes, the thresholds are wrong
+
+Output ONLY the improved Python code wrapped in ```python ... ``` markers.
+"""
+
+META_CODE_FIX_PROMPT = """The previous code had an error. Please fix it.
+
+## Previous Code:
+```python
+{previous_code}
+```
+
+## Error Message:
+{error_message}
+
+## Instructions:
+1. Identify the bug in the code
+2. Fix the issue
+3. Ensure the class is named `GeneratedAgent`
+4. Ensure `decide` method returns "CHARGE", "DISCHARGE", or "HOLD"
+
+Output ONLY the fixed Python code wrapped in ```python ... ``` markers.
+"""
+
+
+def format_meta_coder_feedback(
+    previous_code: str,
+    total_profit: float,
+    num_days: int,
+    price_stats: dict,
+    action_stats: dict,
+    analysis: str = "",
+    error_log: str = ""
+) -> str:
+    """格式化 Meta-Agent 反馈提示"""
+    return META_CODER_FEEDBACK_PROMPT.format(
+        previous_code=previous_code,
+        total_profit=total_profit,
+        num_days=num_days,
+        price_min=price_stats.get('min', 0),
+        price_max=price_stats.get('max', 0),
+        price_mean=price_stats.get('mean', 0),
+        charge_count=action_stats.get('charge', 0),
+        discharge_count=action_stats.get('discharge', 0),
+        hold_count=action_stats.get('hold', 0),
+        avg_charge_price=action_stats.get('avg_charge_price', 0),
+        avg_discharge_price=action_stats.get('avg_discharge_price', 0),
+        analysis=analysis or "No additional analysis.",
+        error_log=error_log or "No errors."
+    )
+
+
+def format_meta_code_fix(previous_code: str, error_message: str) -> str:
+    """格式化代码修复提示"""
+    return META_CODE_FIX_PROMPT.format(
+        previous_code=previous_code,
+        error_message=error_message
+    )
