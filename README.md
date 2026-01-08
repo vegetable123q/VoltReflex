@@ -36,14 +36,22 @@ Battery_agent/
 
 ## 🤖 Agent 类型
 
+### LLM-Based Agents
+
 | Agent | 描述 | 特点 |
 |-------|------|------|
 | **RuleAgent** | 硬编码规则策略 | 无需 LLM，快速稳定 |
 | **SimpleLLMAgent** | Zero-shot LLM | 无记忆，每次独立决策 |
 | **CoTAgent** | 自适应 Chain-of-Thought | 动态学习阈值 + 每日反思 + 规则护栏 |
 | **MetaReflexionAgent** | Agent-Generates-Agent | 生成 Python 策略代码 + 自动迭代优化 |
-| **Q-Learning / DQN** | RL 基线 | 需要训练 |
-| **MPC (24h)** | 模型预测控制 | 理论上界参考 |
+
+### RL 基线 (src/rl_baselines.py)
+
+| Agent | 描述 | 特点 |
+|-------|------|------|
+| **SimpleQAgent** | Q-Learning (表格方法) | 状态离散化，需要训练 |
+| **DQNAgent** | Deep Q-Network | 神经网络近似 Q 函数 |
+| **MPCAgent** | 模型预测控制 (24h) | 理论上界参考 |
 
 ## 📈 实验结果
 
@@ -65,12 +73,30 @@ Battery_agent/
 ### 📊 结果可视化
 
 <p align="center">
-  <img src="outputs/meta_agent_analysis.png" alt="Experiment Results" width="100%">
+  <img src="outputs/full_comparison_chart.png" alt="Full Comparison" width="100%">
+</p>
+
+<p align="center">
+  <img src="outputs/meta_agent_analysis.png" alt="Meta Agent Analysis" width="100%">
 </p>
 
 <p align="center">
   <img src="outputs/strategy_evolution.png" alt="Strategy Evolution" width="80%">
 </p>
+
+<details>
+<summary>📈 更多可视化图表</summary>
+
+#### 累积利润曲线
+<img src="outputs/cumulative_profits.png" alt="Cumulative Profits" width="80%">
+
+#### 每日利润对比
+<img src="outputs/daily_profits.png" alt="Daily Profits" width="80%">
+
+#### 操作分布
+<img src="outputs/action_distribution.png" alt="Action Distribution" width="80%">
+
+</details>
 
 ### 🔬 CoTAgent 自适应设计
 
@@ -97,26 +123,6 @@ Battery_agent/
 | **阈值校准** | 将 CoT Prompt 中的阈值调整为 <$0.03 / >$0.05 | 匹配实际数据 |
 | **相对判断** | 不用绝对价格，而用"低于/高于当日均价" | 自适应波动 |
 | **历史上下文** | 给 LLM 提供过去几小时的价格趋势 | 更好的时机判断 |
-
-### 📊 结果可视化
-
-<p align="center">
-  <img src="outputs/full_comparison_chart.png" alt="Experiment Results" width="100%">
-</p>
-
-<details>
-<summary>📈 更多可视化图表</summary>
-
-#### 累积利润曲线
-<img src="outputs/cumulative_profits.png" alt="Cumulative Profits" width="80%">
-
-#### 每日利润对比
-<img src="outputs/daily_profits.png" alt="Daily Profits" width="80%">
-
-#### 操作分布
-<img src="outputs/action_distribution.png" alt="Action Distribution" width="80%">
-
-</details>
 
 ## 🚀 快速运行
 
