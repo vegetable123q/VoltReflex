@@ -122,7 +122,7 @@ class ExperimentRunner:
         
         env = BatteryEnv(df)
         agent.reset()
-        obs = env.reset()
+        obs, _ = env.reset(seed=seed, options={"initial_soc": 0.5})
         
         hourly_profits = []
         daily_profits = []
@@ -137,7 +137,8 @@ class ExperimentRunner:
                     break
                 
                 action = agent.decide(obs)
-                next_obs, reward, done, info = env.step(action)
+                next_obs, reward, terminated, truncated, info = env.step(action)
+                done = terminated or truncated
                 
                 hourly_profits.append(reward)
                 daily_profit += reward

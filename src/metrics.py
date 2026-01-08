@@ -7,6 +7,8 @@ from typing import Dict, List, Optional, Tuple
 from scipy import stats
 import pandas as pd
 
+from .env import BatteryEnvConfig, compute_load_kwh, compute_prices, transition
+
 
 class MetricsCalculator:
     """
@@ -519,57 +521,117 @@ class MetricsCalculator:
         return daily
 
 
-def calculate_theoretical_optimal(df: pd.DataFrame, battery_capacity: float = 13.5) -> float:
+def calculate_theoretical_optimal(
+    df: pd.DataFrame,
+    config: Optional[object] = None,
+    *,
+    initial_soc: float = 0.5,
+    n_soc: int = 101,
+    n_power_levels: Optional[int] = None,
+    battery_capacity: Optional[float] = None,
+) -> float:
     """
-    计算理论最优利润（完美预知）
-    
-    使用动态规划找到最优充放电策略
+    计算“理论最优”（完美预知）收益，用于上界/Gap 评估。
+
+    Important:
+    - This DP uses the exact same one-step transition (`src.env.transition`) as BatteryEnv,
+      so constraints/settlement are consistent.
+    - The action set is either discrete {HOLD, ±max_power} or a discretized continuous
+      power grid, controlled by config.action_mode / n_power_levels.
     """
-    prices = df['price'].values
-    n = len(prices)
-    max_power = 5.0
-    efficiency = 0.9
-    
-    # 状态: SOC 离散化为 100 个等级
-    n_soc = 101
-    soc_levels = np.linspace(0, 1, n_soc)
-    
-    # DP: value[t][soc] = 从时刻 t 开始，初始 SOC 为 soc 时的最大收益
-    value = np.full((n + 1, n_soc), -np.inf)
-    value[n, :] = 0  # 终止状态
-    
+    if isinstance(config, BatteryEnvConfig):
+        cfg = config
+    elif isinstance(config, dict):
+        cfg = BatteryEnvConfig(**config)
+    elif config is None:
+        cfg = BatteryEnvConfig()
+    else:
+        raise TypeError("config must be None, dict, or BatteryEnvConfig")
+
+    if battery_capacity is not None:
+        cfg = BatteryEnvConfig(**{**cfg.__dict__, "capacity_kwh": float(battery_capacity)})
+
+    if "timestamp" not in df.columns:
+        raise ValueError("df must contain 'timestamp' column")
+    if cfg.base_price_col not in df.columns:
+        raise ValueError(f"df must contain '{cfg.base_price_col}' column")
+
+    df = df.reset_index(drop=True)
+    n = len(df)
+    if n == 0:
+        return 0.0
+
+    # Precompute per-step exogenous variables (perfect foresight setting).
+    timestamps = pd.to_datetime(df["timestamp"])
+    hours = timestamps.dt.hour.to_numpy()
+
+    base_prices = np.empty(n, dtype=np.float64)
+    buy_prices = np.empty(n, dtype=np.float64)
+    sell_prices = np.empty(n, dtype=np.float64)
+    loads = np.empty(n, dtype=np.float64)
+
+    for t in range(n):
+        row = df.iloc[t]
+        base_p, buy_p, sell_p = compute_prices(row=row, cfg=cfg)
+        base_prices[t] = base_p
+        buy_prices[t] = buy_p
+        sell_prices[t] = sell_p
+        loads[t] = compute_load_kwh(row=row, hour=int(hours[t]), cfg=cfg)
+
+    # SOC grid matches env's clamp range.
+    n_soc = int(n_soc)
+    if n_soc < 2:
+        raise ValueError("n_soc must be >= 2")
+
+    soc_min = float(cfg.min_soc)
+    soc_max = float(cfg.max_soc)
+    soc_grid = np.linspace(soc_min, soc_max, n_soc, dtype=np.float64)
+
+    def soc_to_idx(soc_val: float) -> int:
+        # nearest neighbor on uniform grid
+        x = (soc_val - soc_min) / (soc_max - soc_min)
+        idx = int(np.rint(x * (n_soc - 1)))
+        return int(np.clip(idx, 0, n_soc - 1))
+
+    init_soc = float(np.clip(initial_soc, soc_min, soc_max))
+    init_idx = soc_to_idx(init_soc)
+
+    if n_power_levels is None:
+        n_power_levels = 3 if cfg.action_mode == "discrete" else 21
+
+    if cfg.action_mode == "discrete":
+        action_powers = np.array([0.0, cfg.max_charge_kw, -cfg.max_discharge_kw], dtype=np.float64)
+    else:
+        n_levels = int(n_power_levels)
+        if n_levels < 3:
+            raise ValueError("n_power_levels must be >= 3 for continuous mode")
+        action_powers = np.linspace(
+            -cfg.max_discharge_kw, cfg.max_charge_kw, n_levels, dtype=np.float64
+        )
+
+    value = np.full((n + 1, n_soc), -np.inf, dtype=np.float64)
+    value[n, :] = 0.0
+
     for t in range(n - 1, -1, -1):
-        price = prices[t]
-        
-        for i, soc in enumerate(soc_levels):
-            current_energy = soc * battery_capacity
-            
-            # 动作1: HOLD
-            hold_value = value[t + 1, i]
-            
-            # 动作2: CHARGE
-            charge_value = -np.inf
-            if soc < 0.95:
-                charge_energy = min(max_power, (0.95 - soc) * battery_capacity)
-                new_soc = soc + charge_energy / battery_capacity
-                new_soc_idx = int(new_soc * 100)
-                cost = price * charge_energy / np.sqrt(efficiency)
-                if new_soc_idx < n_soc:
-                    charge_value = -cost + value[t + 1, new_soc_idx]
-            
-            # 动作3: DISCHARGE
-            discharge_value = -np.inf
-            if soc > 0.15:
-                discharge_energy = min(max_power, (soc - 0.1) * battery_capacity)
-                new_soc = soc - discharge_energy / battery_capacity
-                new_soc_idx = int(new_soc * 100)
-                revenue = price * discharge_energy * np.sqrt(efficiency)
-                if new_soc_idx >= 0:
-                    discharge_value = revenue + value[t + 1, new_soc_idx]
-            
-            value[t, i] = max(hold_value, charge_value, discharge_value)
-    
-    # 从 50% SOC 开始
-    optimal_profit = value[0, 50]
-    
-    return float(optimal_profit)
+        buy_p = float(buy_prices[t])
+        sell_p = float(sell_prices[t])
+        load_kwh = float(loads[t])
+
+        for i, soc in enumerate(soc_grid):
+            best = -np.inf
+            for p_kw in action_powers:
+                next_soc, r, _flows = transition(
+                    soc=float(soc),
+                    power_kw=float(p_kw),
+                    buy_price=buy_p,
+                    sell_price=sell_p,
+                    load_kwh=load_kwh,
+                    cfg=cfg,
+                )
+                j = soc_to_idx(next_soc)
+                q = r + value[t + 1, j]
+                if q > best:
+                    best = q
+            value[t, i] = best
+
+    return float(value[0, init_idx])

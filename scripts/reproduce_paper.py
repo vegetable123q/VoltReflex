@@ -214,12 +214,13 @@ def run_rl_comparison(config: dict, output_dirs: dict) -> dict:
     mpc_agent.set_price_forecast(data['price'].tolist())
     
     eval_env = BatteryEnv(data.copy())
-    obs = eval_env.reset()
+    obs, _ = eval_env.reset(options={"initial_soc": 0.5})
     mpc_reward = 0
     
     while obs is not None:
         action = mpc_agent.decide(obs)
-        obs, reward, done, _ = eval_env.step(action)
+        obs, reward, terminated, truncated, _ = eval_env.step(action)
+        done = terminated or truncated
         mpc_reward += reward
         if done:
             break
@@ -231,12 +232,13 @@ def run_rl_comparison(config: dict, output_dirs: dict) -> dict:
     print("\nEvaluating Rule-based...")
     rule_agent = RuleAgent()
     eval_env = BatteryEnv(data.copy())
-    obs = eval_env.reset()
+    obs, _ = eval_env.reset(options={"initial_soc": 0.5})
     rule_reward = 0
     
     while obs is not None:
         action = rule_agent.decide(obs)
-        obs, reward, done, _ = eval_env.step(action)
+        obs, reward, terminated, truncated, _ = eval_env.step(action)
+        done = terminated or truncated
         rule_reward += reward
         if done:
             break
@@ -333,12 +335,13 @@ def run_cross_market_evaluation(config: dict, output_dirs: dict) -> dict:
         # Rule-based
         rule_agent = RuleAgent()
         env = BatteryEnv(data.copy())
-        obs = env.reset()
+        obs, _ = env.reset(options={"initial_soc": 0.5})
         total = 0
         
         while obs is not None:
             action = rule_agent.decide(obs)
-            obs, reward, done, _ = env.step(action)
+            obs, reward, terminated, truncated, _ = env.step(action)
+            done = terminated or truncated
             total += reward
             if done:
                 break
@@ -351,12 +354,13 @@ def run_cross_market_evaluation(config: dict, output_dirs: dict) -> dict:
             # Zero-shot
             llm_agent = SimpleLLMAgent(model=config['agents']['llm']['model'])
             env = BatteryEnv(data.copy())
-            obs = env.reset()
+            obs, _ = env.reset(options={"initial_soc": 0.5})
             total = 0
             
             while obs is not None:
                 action = llm_agent.decide(obs)
-                obs, reward, done, _ = env.step(action)
+                obs, reward, terminated, truncated, _ = env.step(action)
+                done = terminated or truncated
                 total += reward
                 if done:
                     break

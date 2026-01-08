@@ -7,6 +7,10 @@ openai>=1.0.0
 # Data Processing and Analysis
 pandas>=2.0.0
 numpy>=1.24.0
+scipy>=1.10.0
+
+# RL Environment API
+gymnasium>=0.29.0
 
 # Visualization
 matplotlib>=3.7.0

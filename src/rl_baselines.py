@@ -119,13 +119,14 @@ class SimpleQAgent:
     
     def train_episode(self, env, max_steps: int = 1000) -> float:
         """训练一个回合"""
-        obs = env.reset()
+        obs, _ = env.reset(options={"initial_soc": 0.5})
         total_reward = 0
         step = 0
         
         while obs is not None and step < max_steps:
             action = self.decide(obs)
-            next_obs, reward, done, _ = env.step(action)
+            next_obs, reward, terminated, truncated, _ = env.step(action)
+            done = terminated or truncated
             
             self.update(obs, action, reward, next_obs, done)
             
@@ -146,13 +147,14 @@ class SimpleQAgent:
         old_epsilon = self.epsilon
         self.epsilon = 0
         
-        obs = env.reset()
+        obs, _ = env.reset(options={"initial_soc": 0.5})
         total_reward = 0
         history = []
         
         while obs is not None:
             action = self.decide(obs)
-            next_obs, reward, done, info = env.step(action)
+            next_obs, reward, terminated, truncated, info = env.step(action)
+            done = terminated or truncated
             
             history.append({**obs, 'action': action, 'reward': reward})
             total_reward += reward
@@ -358,13 +360,14 @@ class DQNAgent:
     
     def train_episode(self, env, max_steps: int = 1000) -> float:
         """训练一个回合"""
-        obs = env.reset()
+        obs, _ = env.reset(options={"initial_soc": 0.5})
         total_reward = 0
         step = 0
         
         while obs is not None and step < max_steps:
             action = self.decide(obs)
-            next_obs, reward, done, _ = env.step(action)
+            next_obs, reward, terminated, truncated, _ = env.step(action)
+            done = terminated or truncated
             
             self.store_transition(obs, action, reward, next_obs, done)
             self.update()
@@ -386,13 +389,14 @@ class DQNAgent:
         old_epsilon = self.epsilon
         self.epsilon = 0
         
-        obs = env.reset()
+        obs, _ = env.reset(options={"initial_soc": 0.5})
         total_reward = 0
         history = []
         
         while obs is not None:
             action = self.decide(obs)
-            next_obs, reward, done, info = env.step(action)
+            next_obs, reward, terminated, truncated, info = env.step(action)
+            done = terminated or truncated
             
             history.append({**obs, 'action': action, 'reward': reward})
             total_reward += reward
@@ -541,13 +545,14 @@ def compare_rl_baselines(data, n_episodes: int = 100) -> Dict:
     mpc_agent.set_price_forecast(data['price'].tolist())
     
     eval_env = BatteryEnv(data.copy())
-    obs = eval_env.reset()
+    obs, _ = eval_env.reset(options={"initial_soc": 0.5})
     mpc_reward = 0
     mpc_history = []
     
     while obs is not None:
         action = mpc_agent.decide(obs)
-        next_obs, reward, done, _ = eval_env.step(action)
+        next_obs, reward, terminated, truncated, _ = eval_env.step(action)
+        done = terminated or truncated
         mpc_history.append({**obs, 'action': action, 'reward': reward})
         mpc_reward += reward
         obs = next_obs

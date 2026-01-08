@@ -13,7 +13,14 @@ wheels/
 
 .DS_Store
 
-outputs/
+# Outputs: keep key artifacts for README rendering, ignore the rest.
+outputs/*
+!outputs/full_comparison_chart.png
+!outputs/cumulative_profits.png
+!outputs/daily_profits.png
+!outputs/action_distribution.png
+!outputs/full_experiment_results_14days.csv
+!outputs/results_metadata.yaml
 
 # 原始数据文件 (只保留增强后的最终数据)
 data/CAISO_LMP_*.csv

@@ -20,7 +20,7 @@ battery:
   max_power_kw: 5.0
   efficiency: 0.9  # Round-trip efficiency
   min_soc: 0.1     # 最低SOC保护
-  max_soc: 1.0
+  max_soc: 0.95
   initial_soc: 0.5
   # 电池退化参数
   degradation:

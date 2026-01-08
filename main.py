@@ -51,7 +51,7 @@ def run_single_agent(
     """
     # 重置
     agent.reset()
-    obs = env.reset()
+    obs, _ = env.reset(options={"initial_soc": 0.5})
     
     hourly_profits = []
     daily_profits = []
@@ -69,7 +69,8 @@ def run_single_agent(
             action = agent.decide(obs)
             
             # 环境执行
-            next_obs, reward, done, info = env.step(action)
+            next_obs, reward, terminated, truncated, info = env.step(action)
+            done = terminated or truncated
             
             # 记录
             hourly_profits.append(reward)

@@ -90,12 +90,18 @@ class RuleAgent(BaseAgent):
     - ELSE HOLD
     """
     
-    def __init__(self, charge_threshold: float = 0.025, discharge_threshold: float = 0.035):
+    def __init__(
+        self,
+        charge_threshold: float = 0.025,
+        discharge_threshold: float = 0.035,
+        max_soc: float = 90,
+        min_soc: float = 10,
+    ):
         super().__init__(name="RuleAgent")
         self.charge_threshold = charge_threshold  # 低于此价格充电
         self.discharge_threshold = discharge_threshold  # 高于此价格放电
-        self.max_soc = 90  # 最大充电 SOC
-        self.min_soc = 10  # 最小放电 SOC
+        self.max_soc = max_soc  # 最大充电 SOC (%)
+        self.min_soc = min_soc  # 最小放电 SOC (%)
     
     def decide(self, observation: Dict) -> str:
         price = observation['price']

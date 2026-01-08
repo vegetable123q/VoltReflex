@@ -45,16 +45,16 @@ class TestBatteryEnv(unittest.TestCase):
     
     def test_reset(self):
         """测试重置功能"""
-        obs = self.env.reset(initial_soc=0.3)
+        obs, _ = self.env.reset(options={"initial_soc": 0.3})
         self.assertEqual(obs['soc'], 30.0)
         self.assertEqual(self.env.current_step, 0)
     
     def test_charge_action(self):
         """测试充电动作"""
-        self.env.reset(initial_soc=0.5)
+        self.env.reset(options={"initial_soc": 0.5})
         initial_soc = self.env.current_soc
         
-        obs, reward, done, info = self.env.step("CHARGE")
+        obs, reward, terminated, truncated, info = self.env.step("CHARGE")
         
         # SOC 应该增加
         self.assertGreater(self.env.current_soc, initial_soc)
@@ -64,10 +64,10 @@ class TestBatteryEnv(unittest.TestCase):
     
     def test_discharge_action(self):
         """测试放电动作"""
-        self.env.reset(initial_soc=0.8)
+        self.env.reset(options={"initial_soc": 0.8})
         initial_soc = self.env.current_soc
         
-        obs, reward, done, info = self.env.step("DISCHARGE")
+        obs, reward, terminated, truncated, info = self.env.step("DISCHARGE")
         
         # SOC 应该减少
         self.assertLess(self.env.current_soc, initial_soc)
@@ -77,10 +77,10 @@ class TestBatteryEnv(unittest.TestCase):
     
     def test_hold_action(self):
         """测试保持动作"""
-        self.env.reset(initial_soc=0.5)
+        self.env.reset(options={"initial_soc": 0.5})
         initial_soc = self.env.current_soc
         
-        obs, reward, done, info = self.env.step("HOLD")
+        obs, reward, terminated, truncated, info = self.env.step("HOLD")
         
         # SOC 应该不变
         self.assertEqual(self.env.current_soc, initial_soc)
@@ -90,12 +90,12 @@ class TestBatteryEnv(unittest.TestCase):
     def test_soc_limits(self):
         """测试 SOC 边界限制"""
         # 测试不能过充
-        self.env.reset(initial_soc=0.95)
+        self.env.reset(options={"initial_soc": 0.95})
         self.env.step("CHARGE")
-        self.assertLessEqual(self.env.current_soc, 1.0)
+        self.assertLessEqual(self.env.current_soc, 0.95)
         
         # 测试不能过放
-        self.env.reset(initial_soc=0.15)
+        self.env.reset(options={"initial_soc": 0.15})
         self.env.step("DISCHARGE")
         self.assertGreaterEqual(self.env.current_soc, 0.1)
     
@@ -106,7 +106,8 @@ class TestBatteryEnv(unittest.TestCase):
         steps = 0
         
         while not done:
-            _, _, done, _ = self.env.step("HOLD")
+            _, _, terminated, truncated, _ = self.env.step("HOLD")
+            done = terminated or truncated
             steps += 1
         
         self.assertEqual(steps, len(self.df))
@@ -117,7 +118,7 @@ class TestRuleAgent(unittest.TestCase):
     
     def test_charge_decision(self):
         """测试低价充电决策"""
-        agent = RuleAgent()
+        agent = RuleAgent(charge_threshold=0.15, discharge_threshold=0.40)
         
         obs = {'price': 0.10, 'soc': 50, 'hour': 3}
         action = agent.decide(obs)
@@ -125,7 +126,7 @@ class TestRuleAgent(unittest.TestCase):
     
     def test_discharge_decision(self):
         """测试高价放电决策"""
-        agent = RuleAgent()
+        agent = RuleAgent(charge_threshold=0.15, discharge_threshold=0.40)
         
         obs = {'price': 0.50, 'soc': 50, 'hour': 18}
         action = agent.decide(obs)
@@ -133,7 +134,7 @@ class TestRuleAgent(unittest.TestCase):
     
     def test_hold_decision(self):
         """测试中等价格保持决策"""
-        agent = RuleAgent()
+        agent = RuleAgent(charge_threshold=0.15, discharge_threshold=0.40)
         
         obs = {'price': 0.25, 'soc': 50, 'hour': 12}
         action = agent.decide(obs)
@@ -141,7 +142,7 @@ class TestRuleAgent(unittest.TestCase):
     
     def test_soc_constraints(self):
         """测试 SOC 约束"""
-        agent = RuleAgent()
+        agent = RuleAgent(charge_threshold=0.15, discharge_threshold=0.40)
         
         # 电量满时不充电
         obs = {'price': 0.10, 'soc': 95, 'hour': 3}
@@ -275,12 +276,13 @@ class TestIntegration(unittest.TestCase):
         agent = RuleAgent()
         
         # 运行模拟
-        obs = env.reset()
+        obs, _ = env.reset(options={"initial_soc": 0.5})
         total_reward = 0
         
         while obs is not None:
             action = agent.decide(obs)
-            obs, reward, done, info = env.step(action)
+            obs, reward, terminated, truncated, info = env.step(action)
+            done = terminated or truncated
             total_reward += reward
             
             if done:
@@ -305,12 +307,13 @@ class TestIntegration(unittest.TestCase):
             env = BatteryEnv(df)
             agent = RuleAgent()
             
-            obs = env.reset(initial_soc=0.5)
+            obs, _ = env.reset(options={"initial_soc": 0.5})
             total = 0
             
             while obs is not None:
                 action = agent.decide(obs)
-                obs, reward, done, _ = env.step(action)
+                obs, reward, terminated, truncated, _ = env.step(action)
+                done = terminated or truncated
                 total += reward
                 if done:
                     break
