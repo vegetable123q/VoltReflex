@@ -11,7 +11,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.graph import StateGraph, END
 
 # 从环境变量获取默认模型
-DEFAULT_MODEL = os.getenv('OPENAI_MODEL', 'gpt-4o-mini')
+DEFAULT_MODEL = os.getenv('OPENAI_MODEL', 'gpt-5-mini')
 
 from .prompts import (
     DECISION_SYSTEM_PROMPT,
@@ -25,12 +25,15 @@ from .prompts import (
 # ============================================================
 # Type Definitions
 # ============================================================
-class AgentState(TypedDict):
+class AgentState(TypedDict, total=False):
     """Reflexion Agent 的状态定义"""
     short_term_memory: List[Dict]  # 当天的 (State, Action, Reward) 记录
     long_term_memory: str  # 每日反思日记 (Insights)
     current_obs: Optional[Dict]  # 当前观测
     current_day: int  # 当前天数
+    # 临时字段（用于节点间传递）
+    _last_response: str  # LLM 决策响应
+    _reflection: str  # LLM 反思响应
 
 
 # ============================================================
