@@ -10,8 +10,9 @@ from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.graph import StateGraph, END
 
-# 从环境变量获取默认模型
-DEFAULT_MODEL = os.getenv('OPENAI_MODEL', 'gpt-5-mini')
+# 从环境变量获取默认模型和 API 配置
+DEFAULT_MODEL = os.getenv('OPENAI_MODEL', 'deepseek-chat')
+DEFAULT_BASE_URL = os.getenv('OPENAI_API_BASE', 'https://api.deepseek.com/v1')
 
 from .prompts import (
     DECISION_SYSTEM_PROMPT,
@@ -117,12 +118,14 @@ class SimpleLLMAgent(BaseAgent):
     每次决策独立调用 LLM
     """
     
-    def __init__(self, model_name: str = None, temperature: float = 0.1):
+    def __init__(self, model_name: str = None, temperature: float = 0.1, base_url: str = None):
         super().__init__(name="SimpleLLMAgent")
         model_name = model_name or DEFAULT_MODEL
+        base_url = base_url or DEFAULT_BASE_URL
         self.llm = ChatOpenAI(
             model=model_name,
-            temperature=temperature
+            temperature=temperature,
+            base_url=base_url
         )
     
     def decide(self, observation: Dict) -> str:
@@ -171,21 +174,25 @@ class ReflexionAgent(BaseAgent):
         self,
         model_name: str = None,
         temperature: float = 0.1,
-        reflection_temperature: float = 0.3
+        reflection_temperature: float = 0.3,
+        base_url: str = None
     ):
         super().__init__(name="ReflexionAgent")
         model_name = model_name or DEFAULT_MODEL
+        base_url = base_url or DEFAULT_BASE_URL
         
         # 决策用 LLM（低温度，更确定性）
         self.decision_llm = ChatOpenAI(
             model=model_name,
-            temperature=temperature
+            temperature=temperature,
+            base_url=base_url
         )
         
         # 反思用 LLM（稍高温度，更有创造性）
         self.reflection_llm = ChatOpenAI(
             model=model_name,
-            temperature=reflection_temperature
+            temperature=reflection_temperature,
+            base_url=base_url
         )
         
         # 初始化状态

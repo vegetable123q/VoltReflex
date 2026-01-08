@@ -68,11 +68,29 @@ uv pip install -r requirements.txt
 
 ### 2. 配置 API Key
 
-创建 `.env` 文件并添加 OpenAI API Key：
+本项目使用 LLM API 进行智能决策。API Key 可从 [清华大学易计算平台](https://easycompute.cs.tsinghua.edu.cn/) 获取。
+
+复制 `.env.example` 并填入你的 API Key：
 
 ```bash
-echo "OPENAI_API_KEY=your-api-key-here" > .env
+cp .env.example .env
 ```
+
+然后编辑 `.env` 文件：
+
+```dotenv
+# API 配置
+BASE_URL=https://llmapi.paratera.com
+API_KEY=your-api-key-here          # 从 https://easycompute.cs.tsinghua.edu.cn/ 获取
+MODEL_ID=deepseek-chat             # 或其他支持的模型如 Kimi-K2
+
+# LangChain 兼容配置（代码使用）
+OPENAI_API_BASE=https://llmapi.paratera.com/v1
+OPENAI_API_KEY=your-api-key-here
+OPENAI_MODEL=deepseek-chat
+```
+
+> **获取 API Key**: 访问 https://easycompute.cs.tsinghua.edu.cn/ 注册并获取 API Key
 
 ### 3. 生成市场数据
 
