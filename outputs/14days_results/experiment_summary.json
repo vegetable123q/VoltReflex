@@ -1,0 +1,85 @@
+{
+  "experiment_info": {
+    "duration": "14 days",
+    "date_range": "2025-12-01 to 2025-12-14",
+    "data_source": "CAISO Enhanced Data",
+    "environment": {
+      "capacity_kwh": 13.5,
+      "max_charge_kw": 5.0,
+      "max_discharge_kw": 5.0,
+      "roundtrip_efficiency": 0.9,
+      "soc_limits": [0.1, 0.95]
+    }
+  },
+  "methods": {
+    "Rule-Based": {
+      "description": "Static rule-based strategy with fixed price thresholds",
+      "total_profit": 34.23,
+      "daily_profits": [1.59, 3.35, 1.15, 1.27, 3.01, 1.49, 3.15, 3.33, 3.69, 3.82, 2.20, 2.36, 1.81, 2.01],
+      "actions": {"charge": 63, "discharge": 64, "hold": 209},
+      "llm_calls": 0
+    },
+    "Q-Learning": {
+      "description": "Tabular Q-learning with discretized state space",
+      "total_profit": 31.50,
+      "daily_profits": [2.81, 2.45, 3.67, 1.84, 1.97, 1.41, 2.33, 2.45, 2.57, 3.12, 1.50, 2.06, 1.73, 1.59],
+      "actions": {"charge": 57, "discharge": 57, "hold": 222},
+      "llm_calls": 0
+    },
+    "DQN": {
+      "description": "Deep Q-Network with neural network function approximation",
+      "total_profit": 13.19,
+      "daily_profits": [2.66, 1.08, 2.67, 0.72, 1.05, 0.01, 0.60, 0.54, 1.16, 0.56, 0.74, 0.72, 0.30, 0.37],
+      "actions": {"charge": 43, "discharge": 42, "hold": 251},
+      "llm_calls": 0
+    },
+    "Simple LLM (No CoT)": {
+      "description": "Zero-shot LLM agent without chain-of-thought reasoning",
+      "total_profit": 5.36,
+      "daily_profits": [3.98, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.37, 0.003, 0.0, 0.0, 0.0],
+      "actions": {"charge": 6, "discharge": 2, "hold": 328},
+      "llm_calls": 336
+    },
+    "CoT Agent (Model A - Full)": {
+      "description": "Chain-of-Thought agent with daily reflection and adaptive thresholds",
+      "total_profit": 17.32,
+      "daily_profits": [2.73, 1.23, 3.35, 0.31, 0.11, 0.18, 2.10, 2.00, 2.14, 0.53, 0.43, 1.35, -0.08, 0.96],
+      "actions": {"charge": -1, "discharge": -1, "hold": -1},
+      "llm_calls": 350
+    },
+    "CoT Agent (Model B - No Reasoning Reward)": {
+      "description": "CoT agent without reasoning reward mechanism",
+      "total_profit": 12.44,
+      "daily_profits": [1.31, 1.49, 1.36, 0.03, 1.50, 0.42, 1.91, 0.42, 0.03, 1.41, 0.79, 0.59, 0.56, 0.62],
+      "actions": {"charge": -1, "discharge": -1, "hold": -1},
+      "llm_calls": 350
+    },
+    "MetaReflexion (AGA)": {
+      "description": "Agent-Generates-Agent: LLM generates Python code strategies",
+      "total_profit": 42.35,
+      "daily_profits": [1.96, 2.73, 0.34, 0.78, 3.06, 2.77, 4.36, 3.49, 3.49, 3.49, 3.49, 3.49, 4.46, 4.46],
+      "actions": {"charge": -1, "discharge": -1, "hold": -1},
+      "llm_calls": 15,
+      "strategies_generated": 14,
+      "best_day_profit": 4.46,
+      "code_executable_rate": 1.0
+    }
+  },
+  "rankings": [
+    {"rank": 1, "method": "MetaReflexion (AGA)", "profit": 42.35},
+    {"rank": 2, "method": "Rule-Based", "profit": 34.23},
+    {"rank": 3, "method": "Q-Learning", "profit": 31.50},
+    {"rank": 4, "method": "CoT Agent (Full)", "profit": 17.32},
+    {"rank": 5, "method": "DQN", "profit": 13.19},
+    {"rank": 6, "method": "CoT (No Reasoning)", "profit": 12.44},
+    {"rank": 7, "method": "Simple LLM", "profit": 5.36}
+  ],
+  "key_findings": [
+    "MetaReflexion (AGA) achieves highest profit ($42.35) by generating adaptive Python code strategies",
+    "AGA shows staircase learning pattern - profit jumps when new logic is discovered",
+    "Simple LLM without CoT fails completely (excessive HOLD actions)",
+    "CoT reasoning improves LLM performance by 3.2x over no-reasoning variant",
+    "Traditional RL methods (Q-Learning, DQN) underperform hand-crafted rules on this task",
+    "AGA achieves best results with only 15 LLM calls vs 336-350 for other LLM methods"
+  ]
+}
