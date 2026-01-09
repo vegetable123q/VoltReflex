@@ -15,14 +15,13 @@ wheels/
 
 # Outputs: keep key artifacts for README rendering, ignore the rest.
 outputs/*
-!outputs/full_comparison_chart.png
-!outputs/cumulative_profits.png
-!outputs/daily_profits.png
-!outputs/action_distribution.png
-!outputs/meta_agent_analysis.png
-!outputs/strategy_evolution.png
-!outputs/full_experiment_results_14days.csv
-!outputs/results_metadata.yaml
+!outputs/14days_results/profit_comparison.png
+!outputs/14days_results/action_distribution.png
+!outputs/14days_results/meta_reflexion_analysis.png
+!outputs/14days_results/llm_cost_efficiency.png
+!outputs/14days_results/cot_ablation_study.png
+!outputs/14days_results/experiment_summary.json
+!outputs/14days_results/full_experiment_results_14days.csv
 
 # 原始数据文件 (只保留增强后的最终数据)
 data/CAISO_LMP_*.csv
