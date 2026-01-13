@@ -15,6 +15,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 from pathlib import Path
 from typing import Dict, List, Tuple
+import argparse
+import sys
 
 # ============================================================
 # 全局配置
@@ -40,7 +42,7 @@ COLORS = {
     'CoT (Full)': '#e74c3c',          # 红色
     'CoT (No Reward)': '#1abc9c',     # 青色
     'Simple LLM': '#95a5a6',          # 灰色 - 最差
-    'MPC (24h)': '#2c3e50',           # 深灰色 - 理论上界
+    'MPC (Upper Bound)': '#2c3e50',   # 深灰色 - 理论上界
 }
 
 ACTION_COLORS = {
@@ -55,8 +57,147 @@ OUTPUT_DIR = PROJECT_ROOT / "outputs" / "14days_results"
 # 所有需要统计的方法 (不含 No CoT)
 ALL_METHODS = [
     "MetaReflexion", "Rule-Based", "Q-Learning", "DQN", 
-    "CoT (Full)", "CoT (No Reward)", "Simple LLM", "MPC (24h)"
+    "CoT (Full)", "CoT (No Reward)", "Simple LLM", "MPC (Upper Bound)"
 ]
+
+def _compute_mpc_upper_bound(days: int = 14) -> Dict:
+    """
+    Compute a true theoretical upper bound for the current environment by solving
+    a full-horizon linear program consistent with the environment reward:
+      reward = avoided_cost + export_revenue - charge_cost
+
+    This is an offline optimal control problem assuming perfect future knowledge.
+    """
+    try:
+        import yaml
+        import pandas as pd
+        from scipy.optimize import linprog
+    except Exception as e:  # pragma: no cover
+        raise RuntimeError(
+            "Missing dependencies for MPC upper bound. "
+            "Install `pyyaml`, `pandas`, and `scipy` in the runtime env."
+        ) from e
+
+    sys.path.insert(0, str(PROJECT_ROOT))
+    from src.env import BatteryEnvConfig, compute_load_kwh, compute_prices
+    from src.utils import load_market_data
+
+    cfg_path = PROJECT_ROOT / "configs" / "default.yaml"
+    cfg = yaml.safe_load(cfg_path.read_text(encoding="utf-8")) if cfg_path.exists() else {}
+
+    battery_cfg = cfg.get("battery", {})
+    max_power = float(battery_cfg.get("max_power_kw", 5.0))
+    env_cfg = BatteryEnvConfig(
+        capacity_kwh=float(battery_cfg.get("capacity_kwh", 13.5)),
+        max_charge_kw=max_power,
+        max_discharge_kw=max_power,
+        roundtrip_efficiency=float(battery_cfg.get("efficiency", 0.9)),
+        min_soc=float(battery_cfg.get("min_soc", 0.10)),
+        max_soc=float(battery_cfg.get("max_soc", 0.95)),
+        allow_export=True,
+        allow_grid_charge=True,
+        action_mode="discrete",
+    )
+    initial_soc = float(battery_cfg.get("initial_soc", 0.5))
+
+    data_cfg = cfg.get("data", {})
+    data_path = PROJECT_ROOT / str(data_cfg.get("path", "data/caiso_enhanced_data.csv"))
+    df = load_market_data(data_path).head(days * 24).copy()
+    T = len(df)
+
+    buy = np.zeros(T)
+    sell = np.zeros(T)
+    load = np.zeros(T)
+    for t in range(T):
+        row = df.iloc[t]
+        hour = int(pd.to_datetime(row["timestamp"]).hour)
+        _base, buy_t, sell_t = compute_prices(row=row, cfg=env_cfg)
+        buy[t] = buy_t
+        sell[t] = sell_t
+        load[t] = compute_load_kwh(row=row, hour=hour, cfg=env_cfg)
+
+    cap = env_cfg.capacity_kwh
+    eff_c = env_cfg.eff_charge
+    eff_d = env_cfg.eff_discharge
+
+    # Variables layout:
+    # [c_store[0:T], d_batt[0:T], d_load[0:T], d_grid[0:T], soc[0:T+1]]
+    idx_c = 0
+    idx_d = idx_c + T
+    idx_dl = idx_d + T
+    idx_dg = idx_dl + T
+    idx_soc = idx_dg + T
+    n = idx_soc + (T + 1)
+
+    # Objective (linprog minimizes): minimize buy*c_store/eff_c - buy*d_load - sell*d_grid
+    obj = np.zeros(n)
+    obj[idx_c : idx_c + T] = buy / eff_c
+    obj[idx_dl : idx_dl + T] = -buy
+    obj[idx_dg : idx_dg + T] = -sell
+
+    max_store = env_cfg.max_charge_kw * env_cfg.dt_hours * eff_c
+    max_discharge = env_cfg.max_discharge_kw * env_cfg.dt_hours
+
+    bounds: List[Tuple[float, float] | Tuple[float, None]] = [  # type: ignore[assignment]
+        (0.0, 0.0)
+    ] * n
+    for t in range(T):
+        bounds[idx_c + t] = (0.0, max_store)
+        bounds[idx_d + t] = (0.0, max_discharge)
+        bounds[idx_dl + t] = (0.0, float(load[t]))
+        bounds[idx_dg + t] = (0.0, None)
+    for t in range(T + 1):
+        bounds[idx_soc + t] = (env_cfg.min_soc, env_cfg.max_soc)
+    bounds[idx_soc + 0] = (initial_soc, initial_soc)
+
+    A_eq = []
+    b_eq = []
+
+    # SOC dynamics: soc[t+1] - soc[t] - c_store[t]/cap + d_batt[t]/cap = 0
+    for t in range(T):
+        row = np.zeros(n)
+        row[idx_soc + t + 1] = 1.0
+        row[idx_soc + t] = -1.0
+        row[idx_c + t] = -1.0 / cap
+        row[idx_d + t] = 1.0 / cap
+        A_eq.append(row)
+        b_eq.append(0.0)
+
+    # Discharge split: d_load[t] + d_grid[t] - d_batt[t]*eff_d = 0
+    for t in range(T):
+        row = np.zeros(n)
+        row[idx_dl + t] = 1.0
+        row[idx_dg + t] = 1.0
+        row[idx_d + t] = -eff_d
+        A_eq.append(row)
+        b_eq.append(0.0)
+
+    A_eq = np.vstack(A_eq)
+    b_eq = np.array(b_eq)
+
+    res = linprog(obj, A_eq=A_eq, b_eq=b_eq, bounds=bounds, method="highs")
+    if not res.success:
+        raise RuntimeError(f"MPC upper bound LP failed: {res.message}")
+
+    x = res.x
+    c_store = x[idx_c : idx_c + T]
+    d_batt = x[idx_d : idx_d + T]
+    d_load = x[idx_dl : idx_dl + T]
+    d_grid = x[idx_dg : idx_dg + T]
+
+    hourly_reward = buy * d_load + sell * d_grid - buy * (c_store / eff_c)
+    total_profit = float(hourly_reward.sum())
+    daily = [float(hourly_reward[i : i + 24].sum()) for i in range(0, T, 24)]
+
+    # Approximate action counts via net power sign.
+    net_power_kw = (c_store / eff_c) / env_cfg.dt_hours - (d_batt / env_cfg.dt_hours)
+    counts = {
+        "CHARGE": int((net_power_kw > 1e-6).sum()),
+        "DISCHARGE": int((net_power_kw < -1e-6).sum()),
+        "HOLD": int((np.abs(net_power_kw) <= 1e-6).sum()),
+    }
+
+    return {"profit": total_profit, "daily": daily, "counts": counts, "llm_calls": 0}
 
 
 # ============================================================
@@ -133,25 +274,8 @@ def load_all_data() -> Dict:
             "best_code": aga["best_code"]
         }
     
-    # MPC (24h) - 从CSV加载
-    import csv
-    with open(outputs_dir / "full_experiment_results_14days.csv") as f:
-        reader = csv.DictReader(f)
-        for row in reader:
-            if row["Method"] == "MPC (24h)":
-                profit = float(row["Profit"])
-                charge = int(row["Charge"])
-                discharge = int(row["Discharge"])
-                hold = int(row["Hold"])
-                # 估算daily利润 (均匀分布)
-                daily_profit = profit / 14
-                data["MPC (24h)"] = {
-                    "profit": profit,
-                    "daily": [daily_profit] * 14,
-                    "counts": {"CHARGE": charge, "DISCHARGE": discharge, "HOLD": hold},
-                    "llm_calls": 0
-                }
-                break
+    # MPC (Upper Bound) - 全局最优（理论上界）
+    data["MPC (Upper Bound)"] = _compute_mpc_upper_bound(days=14)
     
     return data
 
@@ -160,7 +284,7 @@ def load_all_data() -> Dict:
 # 图表1: 利润对比图 (所有7种方法)
 # ============================================================
 def plot_profit_comparison(data: Dict):
-    """生成14天总利润对比图 - 包含所有7种方法"""
+    """生成14天总利润对比图 - 包含所有方法 + 理论上界"""
     fig, axes = plt.subplots(1, 2, figsize=(16, 7))
     
     # --- 左图: 横向柱状图 (按利润排序) ---
@@ -196,7 +320,7 @@ def plot_profit_comparison(data: Dict):
     days = list(range(1, 15))
     
     # 选择5个代表性方法展示曲线
-    curve_methods = ["MetaReflexion", "Rule-Based", "Q-Learning", "CoT (Full)", "MPC (24h)"]
+    curve_methods = ["MetaReflexion", "Rule-Based", "Q-Learning", "CoT (Full)", "MPC (Upper Bound)"]
     linestyles = ['-', '--', '-.', ':', '-']
     markers = ['o', 's', '^', 'D', 'x']
     
@@ -596,6 +720,22 @@ def plot_cot_ablation_study(data: Dict):
 # ============================================================
 def main():
     """主入口"""
+    parser = argparse.ArgumentParser(description="14-Day experiment figure generator")
+    parser.add_argument(
+        "--only",
+        choices=[
+            "profit_comparison",
+            "action_distribution",
+            "meta_reflexion_analysis",
+            "llm_cost_efficiency",
+            "cot_ablation_study",
+            "all",
+        ],
+        default="all",
+        help="Generate only a specific figure (default: all).",
+    )
+    args = parser.parse_args()
+
     print("=" * 60)
     print("  Battery Agent - 14-Day Experiment Figure Generator")
     print("=" * 60)
@@ -609,20 +749,25 @@ def main():
     print(f"       Loaded {len(data)} methods: {list(data.keys())}")
     
     # 生成图表
-    print("\n[2/6] Generating profit comparison (all 7 methods)...")
-    plot_profit_comparison(data)
-    
-    print("[3/6] Generating action distribution (all methods)...")
-    plot_action_distribution(data)
-    
-    print("[4/6] Generating MetaReflexion analysis...")
-    plot_meta_reflexion_analysis(data)
-    
-    print("[5/6] Generating LLM cost efficiency...")
-    plot_llm_cost_efficiency(data)
-    
-    print("[6/6] Generating CoT ablation study...")
-    plot_cot_ablation_study(data)
+    if args.only in ("profit_comparison", "all"):
+        print("\n[2/6] Generating profit comparison (all methods + upper bound)...")
+        plot_profit_comparison(data)
+
+    if args.only in ("action_distribution", "all"):
+        print("[3/6] Generating action distribution (all methods)...")
+        plot_action_distribution(data)
+
+    if args.only in ("meta_reflexion_analysis", "all"):
+        print("[4/6] Generating MetaReflexion analysis...")
+        plot_meta_reflexion_analysis(data)
+
+    if args.only in ("llm_cost_efficiency", "all"):
+        print("[5/6] Generating LLM cost efficiency...")
+        plot_llm_cost_efficiency(data)
+
+    if args.only in ("cot_ablation_study", "all"):
+        print("[6/6] Generating CoT ablation study...")
+        plot_cot_ablation_study(data)
     
     # 总结
     print("\n" + "=" * 60)
