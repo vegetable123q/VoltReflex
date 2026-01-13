@@ -40,6 +40,7 @@ COLORS = {
     'CoT (Full)': '#e74c3c',          # 红色
     'CoT (No Reward)': '#1abc9c',     # 青色
     'Simple LLM': '#95a5a6',          # 灰色 - 最差
+    'MPC (24h)': '#2c3e50',           # 深灰色 - 理论上界
 }
 
 ACTION_COLORS = {
@@ -54,7 +55,7 @@ OUTPUT_DIR = PROJECT_ROOT / "outputs" / "14days_results"
 # 所有需要统计的方法 (不含 No CoT)
 ALL_METHODS = [
     "MetaReflexion", "Rule-Based", "Q-Learning", "DQN", 
-    "CoT (Full)", "CoT (No Reward)", "Simple LLM"
+    "CoT (Full)", "CoT (No Reward)", "Simple LLM", "MPC (24h)"
 ]
 
 
@@ -63,7 +64,7 @@ ALL_METHODS = [
 # ============================================================
 def load_all_data() -> Dict:
     """加载所有实验数据"""
-    outputs_dir = PROJECT_ROOT / "outputs"
+    outputs_dir = PROJECT_ROOT / "outputs" / "14days_results"
     data = {}
     
     # Rule-based
@@ -132,6 +133,26 @@ def load_all_data() -> Dict:
             "best_code": aga["best_code"]
         }
     
+    # MPC (24h) - 从CSV加载
+    import csv
+    with open(outputs_dir / "full_experiment_results_14days.csv") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            if row["Method"] == "MPC (24h)":
+                profit = float(row["Profit"])
+                charge = int(row["Charge"])
+                discharge = int(row["Discharge"])
+                hold = int(row["Hold"])
+                # 估算daily利润 (均匀分布)
+                daily_profit = profit / 14
+                data["MPC (24h)"] = {
+                    "profit": profit,
+                    "daily": [daily_profit] * 14,
+                    "counts": {"CHARGE": charge, "DISCHARGE": discharge, "HOLD": hold},
+                    "llm_calls": 0
+                }
+                break
+    
     return data
 
 
@@ -175,7 +196,7 @@ def plot_profit_comparison(data: Dict):
     days = list(range(1, 15))
     
     # 选择5个代表性方法展示曲线
-    curve_methods = ["MetaReflexion", "Rule-Based", "Q-Learning", "CoT (Full)", "Simple LLM"]
+    curve_methods = ["MetaReflexion", "Rule-Based", "Q-Learning", "CoT (Full)", "MPC (24h)"]
     linestyles = ['-', '--', '-.', ':', '-']
     markers = ['o', 's', '^', 'D', 'x']
     
